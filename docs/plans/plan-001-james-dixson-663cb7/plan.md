@@ -5,139 +5,97 @@ description: Implement pi-bash-cap pi extension for mechanical Bash output cappi
 id: plan-001-james-dixson-663cb7
 author: james-dixson
 created: '2026-09-26'
-status: drafting
+status: approved
+deliverable_class: standard
+fingerprint: 49b88ae813351c888bddafbc85dec70ed6f71e97c817c44f2e3efe4731af033a
 ---
 # Plan: Implement pi-bash-cap pi extension for mechanical Bash output capping
 
 **ID:** plan-001-james-dixson-663cb7
 **Author:** james-dixson
 **Created:** 2026-09-26
-**Status:** drafting
+**Status:** approved
+**Deliverable-class:** standard
+**Fingerprint:** 49b88ae813351c888bddafbc85dec70ed6f71e97c817c44f2e3efe4731af033a
 
 ## Objective
-
-Implement a pi coding-agent extension (`pi-bash-cap`) that mechanically caps oversized Bash tool output before it enters the model's context window, spilling the full output to a recoverable file. This is the pi equivalent of the claude-code `PostToolUse` hook `bash-output-cap.sh` (in `dixson3/rc-files`, `claude/hooks/`).
+Implement a pi coding-agent extension that mechanically caps oversized Bash tool output before it enters the model context window. The model sees a truncated view (head + cap notice + tail); full output spills to a recoverable file. This is the pi equivalent of the claude-code PostToolUse hook `bash-output-cap.sh` (dixson3/rc-files).
 
 ## Motivation
+Pi's Bash tool output is truncated to 2000 lines / 50KB at the output-collection layer, but this limit is a hard drop — the model gets the first 2000 lines and nothing else, with no way to recover what was dropped. The model cannot distinguish "output was truncated by the cap" from "that was the actual output," and it has no path to the missing content.
 
-Claude Code has a mechanical safety net for context management: a `PostToolUse` hook (`bash-output-cap.sh`) that caps oversized Bash output after the tool runs, regardless of what the model chose to do. If the model uses `Bash` instead of a sandboxed `ctx_execute`, the hook still catches oversized output and truncates it before it burns context.
+The `bash-output-cap.sh` hook for claude-code solves this by operating at the PostToolUse layer — after output is collected but before it enters context — spilling the full output to a recoverable file and replacing the model-facing content with head + cap notice + tail. The model knows it is seeing a truncated view, can grep the spill file, and can re-run uncapped when completeness is the point.
 
-Pi's context-mode extension provides instruction-based routing (telling the model to prefer `ctx_execute` over `bash`) and mechanical blocking of unsafe patterns (curl/wget/fetch), but it does NOT implement mechanical output capping. A `bash` call that produces 50KB of output enters the model's context in full — there is no safety net.
-
-This extension closes that gap. It is a companion to context-mode, not a replacement: context-mode routes and sessions, pi-bash-cap caps what slips through.
+This extension provides the same capability for pi users, using pi's ExtensionAPI `tool_result` event handler, which is the pi equivalent of the claude-code PostToolUse hook.
 
 ## Upstream Issues
+| Issue | Title | Disposition | Notes | Resolved By |
+|-------|-------|-------------|-------|-------------|
 
-None — this is a new package with no existing upstream issues.
+no-upstream-issues: triage ran 2026-09-26 via `gh issue list --search "bash cap" --limit 20` — zero matches
 
 ## Investigation Findings
+Reference implementations already exist for both the target pattern and the cap logic — no investigation needed:
 
-_Confirmed from prior research:_
-
-1. **Pi's `tool_result` event supports result modification.** The `ToolResultEventResult` return type includes `content?: (TextContent | ImageContent)[]` — equivalent to claude-code's `hookSpecificOutput.updatedOutput`. A handler returning `{ content: [cappedVersion] }` replaces what the model sees. Confirmed in `pi/dist/core/extensions/types.d.ts`.
-
-2. **The context-mode pi extension already uses `tool_result`** (read-only, for SessionDB capture) — demonstrating the event fires reliably for all built-in tools including `bash`.
-
-3. **Pi package publishing requirements** (from `docs/packages.md`):
-   - Must be an npm package with the `pi-package` keyword for gallery discovery
-   - Extension entry point at `extensions/` (conventional) or declared in `package.json` `pi.extensions`
-   - Skills go in `skills/` (conventional) or declared in `pi.skills`
-   - Dependencies on pi runtime packages (`@earendil-works/pi-coding-agent` etc.) go in `peerDependencies` with `"*"` range
-
-4. **No external npm dependencies needed.** The extension uses only Node.js built-ins (`fs`, `os`, `path`) and pi runtime types. Zero production dependencies.
-
-5. **Reference implementation exists.** `claude/hooks/bash-output-cap.sh` in `dixson3/rc-files` provides the spill-and-cap logic pattern (tunables, fail-open, nocap escape hatch, recoverable spill path).
+- **pi extension pattern:** `context-mode` extension at `~/.pi/agent/npm/node_modules/context-mode/build/adapters/pi/extension.js` demonstrates `pi.on("tool_result", ...)` handler registration, `BashToolResultEvent` type shape (`event.toolName === "bash"`, `event.input.command`, `event.content: (TextContent | ImageContent)[]`, `event.details: BashToolDetails`), and the `ToolResultEventResult` return type (`{ content?: (TextContent | ImageContent)[], details?: unknown }`).
+- **Cap logic:** `bash-output-cap.sh` at `~/_dotfiles/rc-files/claude/hooks/bash-output-cap.sh` provides the complete spill-and-cap algorithm: threshold checks (lines/bytes), spill file path derivation, head+notice+tail assembly, stderr bounding, and the `nocap` escape hatch.
+- **pi extension types:** `core/extensions/types.d.ts` confirms `ToolResultEventResult` with `content`, `details`, `isError`, and `usage` fields. `BashToolDetails` has `truncation?: TruncationResult` and `fullOutputPath?: string`.
+- **Packaging:** `docs/packages.md` documents the `pi` field in `package.json`, conventional directories (`extensions/`), and the `pi-package` keyword for pi.dev/packages discovery.
 
 ## Approach
+Single-file TypeScript extension (`index.ts`) with no npm dependencies beyond what the pi runtime provides. Register a `tool_result` event handler that:
 
-A single-file TypeScript extension (`index.ts`) with a companion skill file (`SKILL.md`).
+1. Guards on `event.toolName === "bash"` (and `"powershell"` for completeness). The handler narrows `event` to `BashToolResultEvent | PowerShellToolResultEvent` before accessing `event.input.command`, since `ToolResultEventBase.input` is typed `Record<string, unknown>`.
+2. Skips on: `PI_BASH_CAP_OFF=1`, `nocap` in command, `event.isError`, image content present, empty content
+3. Detects pi's built-in truncation: if `event.details?.fullOutputPath` exists and points to a readable file, reads it for true total lines/bytes (pi pre-truncates to 2000/50KB before the handler fires — the extension must measure against the real total, not the already-truncated content). If `event.details?.truncation` is present, uses `truncation.totalLines`/`truncation.totalBytes` without reading the file.
+4. Concatenates all `content[].text` blocks; measures lines and bytes. When `fullOutputPath` is available, uses those dimensions; otherwise measures from content directly.
+5. If below both thresholds → pass through (return `undefined`)
+6. If over threshold → spill full text to `~/.pi/bash-cap-spill/<toolCallId>.txt` (toolCallId is unique per execution, naturally shards concurrent calls without session-ID plumbing), build replacement content array with head + cap notice + tail, return `{ content: [{ type: "text", text: cappedText }] }`
+7. When pi's built-in truncation spilled the full output to `fullOutputPath`, the extension uses that file directly rather than re-spilling from `event.content` (which is already truncated)
+8. Bound stderr similarly (keep it visible but capped)
+9. Any error → return `undefined` (fail-open, original result preserved)
 
-The extension registers one `tool_result` handler on the `bash` tool via `pi.on("tool_result", ...)`. When Bash output exceeds configurable thresholds, the handler spills the full output to `~/.pi/context-mode/bash-spill/<sessionId>/<toolCallId>.txt` and replaces the result content with a truncated view (head + cap notice + tail). The handler is fail-open — any exception leaves the original result untouched.
+Reuse the same environment variable naming from the claude-code hook, prefixed `PI_` instead of `CLAUDE_`:
+- `PI_BASH_CAP_LINES` (default 400)
+- `PI_BASH_CAP_BYTES` (default 20000)
+- `PI_BASH_CAP_HEAD` (default 100)
+- `PI_BASH_CAP_TAIL` (default 40)
+- `PI_BASH_CAP_OFF` (default unset)
 
-No other lifecycle hooks. No MCP bridge. No SessionDB. Just one handler, one job.
+The cap notice mimics the bash-output-cap.sh format: a separator block with line/byte counts, the spill path, recovery commands, and the uncap re-run instruction.
 
-Extension structure:
-```
-pi-bash-cap/
-├── package.json          # name: pi-bash-cap, pi-package keyword, pi.extensions
-├── index.ts              # Extension entry point — default export function(pi: ExtensionAPI)
-├── SKILL.md              # Skill file: describes the extension for the model
-├── README.md             # Human-facing docs
-└── LICENSE               # MIT
-```
+![Architecture](diagrams/architecture.png)
 
 ## Epics
-
-### Epic 1: Core extension implementation
-
-- Issue 1.1: Write `index.ts` — extension entry point with `tool_result` handler for bash output capping
-  - Implements fail-open pattern: all logic wrapped in try/catch, errors leave result untouched
-  - Tunable via environment variables: PI_BASH_CAP_LINES (400), PI_BASH_CAP_BYTES (20000), PI_BASH_CAP_HEAD (100), PI_BASH_CAP_TAIL (40), PI_BASH_CAP_OFF
-  - Per-command `nocap` escape hatch
-  - Never touches image payloads
-  - Spills full output to `~/.pi/context-mode/bash-spill/<session>/<toolCallId>.txt`
-  - Replaces `event.content` with truncated view (head + banner + tail)
-  - Banner is recoverable: shows line count, bytes, spill path, grep/sed recovery commands
-  - Bound stderr too (capped at 200 lines)
-
-### Epic 2: Package scaffolding
-
-- Issue 2.1: Create `package.json` conforming to pi package requirements
-  - `name`: `pi-bash-cap`
-  - `keywords`: `["pi-package"]`
-  - `pi.extensions`: `["./index.ts"]`
-  - `pi.skills`: `["./skills"]`
-  - `peerDependencies`: `@earendil-works/pi-coding-agent` at `"*"`
-  - `files`: includes `index.ts`, `SKILL.md`, `README.md`, `LICENSE`
-- Issue 2.2: Write `SKILL.md` skill file describing the extension to the model
-  - Documents env-var tunables and nocap escape hatch
-  - Explains the recoverable spill pattern
-  - Notes this is a mechanical safety net, not a routing mechanism
-- Issue 2.3: Write `LICENSE` (MIT, Copyright 2025 James Dixson)
-- Issue 2.4: Write comprehensive `README.md` with install instructions, configuration, and usage
-
-### Epic 3: Validation and publish
-
-- Issue 3.1: Test the extension locally with pi (`pi --extension ./index.ts`)
-  - Verify output under threshold passes through unmodified
-  - Verify output over threshold is capped with recoverable banner
-  - Verify `PI_BASH_CAP_OFF=1` disables capping
-  - Verify `nocap` in command bypasses capping
-  - Verify image results pass through unmodified
-- Issue 3.2: Publish to npm (`npm publish`)
-- Issue 3.3: Verify install works end-to-end (`pi install npm:pi-bash-cap`)
+### Epic 1: Extension implementation
+- Issue 1.1: Create `index.ts` — single-file pi extension with `tool_result` handler for bash output capping
+- Issue 1.2: Package the extension for npm/pi.dev — `package.json` with `pi` field, MIT license, `pi-package` keyword, SKILL.md
 
 ## Gates
-
 ### Start Gate (mandatory)
 - Type: human
 - Approvers: operator
-
-### Capability Gate: Local test passes
-- Type: auto
-- Condition: All Issue 3.1 tests pass
-- Test: bash scripts/test-extension.sh
 
 ### Reconcile Gate
 - Type: auto (all execution beads closed)
 - Blocks: reconcile step
 
 ## Risks & Mitigations
-
 | # | Risk | Severity | Mitigation |
 | :-- | :-- | :-- | :-- |
-| R1 | Pi's `tool_result` event shape differs from documented types at runtime | low | Extension uses defensive property access (`event?.toolName`, `event?.content?.[0]?.text`); any mismatch returns undefined which the fail-open catch block handles |
-| R2 | Pi's `isBashToolResult` type guard is not exported at runtime | low | Extension checks `event.toolName === "bash"` as a simple string comparison — does not depend on pi-internal type guards |
-| R3 | Extension interferes with context-mode's `tool_result` handler | low | Pi's handler composition model means each handler runs independently; context-mode reads from the result, pi-bash-cap may modify `content` — the modified content is what context-mode captures, which is the correct behavior (capture what the model sees) |
+| R1 | Cap alters output the model genuinely needs in full (e.g., a failing test's complete error) | med | Model can grep the spill file or re-run with `# nocap`; the cap notice is explicit about what was dropped and how to recover |
+| R2 | Extension loaded but env vars not set — unexpected default behavior | low | Sensible defaults documented in SKILL.md; `PI_BASH_CAP_OFF=1` provides a global kill switch |
+| R3 | PowerShell output uses different type shape than Bash | low | Guard on both `"bash"` and `"powershell"`; both share `BashToolDetails` and content structure |
 
 ## Success Criteria
-
 | # | Criterion | Verification | Discharged-by |
 | :-- | :-- | :-- | :-- |
-| SC1 | Extension loads in pi without errors via `pi --extension ./index.ts` | Run `pi --extension ./index.ts --help` — no error output | 1.1, 2.1 |
-| SC2 | Bash output under threshold passes through unmodified | Create a small output (e.g., `echo hello`) — result content is unchanged | 1.1, 3.1 |
-| SC3 | Bash output over threshold is capped with recoverable banner | Run `seq 1 1000` — result shows head + banner + tail, full output at spill path | 1.1, 3.1 |
-| SC4 | `PI_BASH_CAP_OFF=1` disables all capping | Set env var, run large-output command — full output in context | 1.1, 3.1 |
-| SC5 | `nocap` in command string bypasses capping | Run `seq 1 1000 # nocap` — full output in context | 1.1, 3.1 |
-| SC6 | Image results pass through unmodified | Read an image file — result is unchanged | 1.1, 3.1 |
-| SC7 | Package installs via `pi install` from npm | `pi install npm:pi-bash-cap` succeeds, extension loads in next session | 3.2, 3.3 |
+| SC1 | Extension loads without errors via `pi --extension ./index.ts` | manual: pi registers extension and starts normally | 1.1 |
+| SC2 | Bash output below thresholds passes through unchanged | manual: `echo "short output"` returns verbatim in model context | 1.1 |
+| SC3 | Bash output above thresholds is capped: model sees head+notice+tail, full output spilled to file | manual: `yes "x" | head -1000` triggers cap; verify spill file exists with all 1000 lines | 1.1 |
+| SC4 | `nocap` anywhere in the command bypasses capping | manual: `yes "x" | head -1000 # nocap` returns full output | 1.1 |
+| SC5 | `PI_BASH_CAP_OFF=1` disables the extension entirely | manual: set env var, oversized output passes through uncapped | 1.1 |
+| SC6 | Extension errors (e.g., disk full) leave original result untouched | manual: fail-open — any thrown error in handler returns `undefined` | 1.1 |
+| SC7 | PowerShell output is also capped (same underlying type) | manual: oversized PowerShell output triggers cap | 1.1 |
+| SC8 | Package is publishable to npm with correct pi metadata and MIT license | manual: `package.json` includes `pi` field, `pi-package` keyword, MIT license, attribution to James Dixson (dixson3) | 1.2 |
+| SC9 | SKILL.md documents installation, configuration, and usage | manual: SKILL.md present at package root covering env vars, nocap escape hatch, recovery commands | 1.2 |

@@ -1,52 +1,50 @@
 ---
-type: Environment
+type: Context
 okf_spec: OKF-PLAN
+plan_id: plan-001-james-dixson-663cb7
+captured: '2026-09-26'
+hostname: byid-mba-dixson3
 ---
-# Project Environment Context
 
-_Snapshot taken at plan-authoring time. Cold readers: verify these values
-against the current environment before acting. The snapshot header below
-records the machine and date of capture._
+# Context
 
 ## Project environment
 
-Describe the project this plan belongs to: what it does, what stack it uses,
-any non-obvious setup. A cold reader should not need to infer this from code.
+- **Repository:** dixson3/pi-bash-cap
+- **Working directory:** `~/workspace/dixson3/pi-bash-cap`
+- **Current branch:** main
 
 ## Tool inventory
 
-<!-- snapshot: host=d3-mbp-m5.local date=2026-09-26 -->
-
-- `bd`: bd version 1.3.0 (Homebrew)
-- `git`: git version 2.54.0 (Apple Git-157)
-- `uv`: uv 0.12.18 (01cb90c1a 2026-09-22 aarch64-apple-darwin)
-- `python`: Python 3.14.2
-- `gh`: gh version 2.101.0 (2026-09-15)
-- `glab`: glab 1.119.0 (f5016eda2)
-- `claude`: 2.1.282 (Claude Code)
+| Tool | Available |
+| :-- | :-- |
+| `pi` | yes (coding agent) |
+| `git` | yes |
+| `bd` | yes (beads ≥ 1.1.0) |
+| `d2` | yes |
+| `tsx` | yes |
+| `npm` | yes |
+| `yf` | yes |
+| `uv` | yes |
 
 ## Paths
 
-- Repo root: `/Users/james/workspace/dixson3/pi-bash-cap`
-- Working directory at plan creation: `/Users/james/workspace/dixson3/pi-bash-cap`
-- Plan directory: `docs/plans/plan-001-james-dixson-663cb7`
+- `~/_dotfiles/rc-files/claude/hooks/bash-output-cap.sh` — claude-code PostToolUse hook (cap logic reference)
+- `~/.pi/agent/npm/node_modules/context-mode/build/adapters/pi/extension.js` — pi extension pattern
+- `~/.nvm/versions/node/v24.20.0/lib/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md` — pi extension conventions
+- `~/.nvm/versions/node/v24.20.0/lib/node_modules/@earendil-works/pi-coding-agent/docs/packages.md` — pi package conventions
+- `~/.nvm/versions/node/v24.20.0/lib/node_modules/@earendil-works/pi-coding-agent/examples/extensions/truncated-tool.ts` — pi truncation utilities example
+- `~/.nvm/versions/node/v24.20.0/lib/node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts` — pi extension type definitions
 
 ## Operator identity
 
-- Git user: `james-dixson`
-- Attribution: fill in role, contact, and authority scope before intake.
+- **Author:** James Dixson (dixson3)
+- **Host:** byid-mba-dixson3 (macOS)
+- **Organization:** Yoshiko Studios LLC
 
 ## Runtime assumptions
 
-List the assumptions this plan makes about the environment it will execute in
-(OS, shell, network access, credentials, side-effect permissions). A cold
-reader on a different machine should be able to decide whether the plan is
-safe to run as-is.
-
-## Adjacent-concept glossary
-
-_Optional._ Terms, acronyms, or project-specific jargon the plan uses.
-
-## Additional context
-
-_Optional._ Anything else a cold reader needs that does not fit above.
+- pi coding-agent ≥ 0.73.x installed via npm
+- TypeScript support via jiti (pi's built-in transpiler)
+- Node.js ≥ 24.x
+- No external npm dependencies required beyond pi runtime packages

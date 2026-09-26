@@ -1,37 +1,34 @@
 direction: right
 
-extension: "pi-bash-cap extension (index.ts)" {
+extension: "pi-bash-cap extension" {
   handler: "tool_result handler" {
-    label: "pi.on(\"tool_result\", handler)"
+    label: "pi.on(\"tool_result\", ...)"
   }
 }
 
 env: "Environment Variables" {
-  PI_BASH_CAP_LINES
-  PI_BASH_CAP_BYTES
-  PI_BASH_CAP_HEAD
-  PI_BASH_CAP_TAIL
-  PI_BASH_CAP_OFF
+  vars: "PI_BASH_CAP_LINES\nPI_BASH_CAP_BYTES\nPI_BASH_CAP_HEAD\nPI_BASH_CAP_TAIL\nPI_BASH_CAP_OFF"
 }
 
-spill: "Spill Dir\n~/.pi/bash-cap-spill/<session-id>/" {
+spill: "Spill Dir" {
   shape: cylinder
+  label: "~/.pi/bash-cap-spill/<sid>/"
 }
 
 model: "Model Context" {
   shape: page
 }
 
-env -> handler: configure thresholds
-handler -> handler: inspect event.input.command
-handler -> handler: measure content[].text
+env -> handler: "configure thresholds"
+handler -> handler: "inspect event.input.command"
+handler -> handler: "measure content text"
 
-handler -> spill: "write full output\n(when over threshold)"
-handler -> model: "replace content[].text\n(head + cap notice + tail)"
-handler -> handler: "pass-through\n(when under threshold,\nerror, nocap, or OFF)"
+handler -> spill: "write full output\n(over threshold)"
+handler -> model: "replace content text\n(head + notice + tail)"
+handler -> model: "pass-through\n(under threshold)"
 
 handler.exit: "Error path" {
   shape: diamond
 }
-handler -> handler.exit: "on any failure:\nreturn undefined\n(original result preserved)"
-handler.exit -> model: "original content\npasses through untouched"
+handler -> handler.exit: "on any failure"
+handler.exit -> model: "original content\nuntouched"

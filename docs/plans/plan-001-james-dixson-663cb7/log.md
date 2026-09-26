@@ -1,7 +1,11 @@
-# Phase Log
+# Phase log
 
 ## 2026-09-26
+- approved: operator approved
+- ready-for-approval: ready-check green — last red-team APPROVE + audit pass
+- review-pass: pass-2 red-team returned APPROVE — all pass-1 concerns verified resolved, one new low concern (prose SC verification) noted but not blocking
+- review-pass: pass-1 red-team returned REVISE — 5 concerns (C1 gate cycle, C2 pre-truncation, C3 missing scope-answers, C4 session-id, C5 type narrowing)
+- review: plan v1 drafted — single-file extension, no deps, tool_result handler pattern
 
-- drafting: plan drafted — single epic with 8 issues across core implementation, package scaffolding, and validation/publish
-- investigating: confirmed pi `tool_result` event supports result modification, pi package publishing requirements, reference implementation available in dixson3/rc-files
-- scoping: plan initialized — single-file TypeScript extension, no external dependencies, companion to context-mode
+- drafting: specification provided; no investigation needed — reference impls present for both target pattern (context-mode extension.js) and cap logic (bash-output-cap.sh)
+- scoping: plan initialized from template
