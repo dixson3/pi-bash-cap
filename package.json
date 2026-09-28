@@ -1,0 +1,27 @@
+{
+  "name": "pi-bash-cap",
+  "version": "1.0.0",
+  "description": "Mechanical Bash output capping extension for pi coding-agent. Caps oversized Bash results before context entry, spilling full output to a recoverable file.",
+  "author": "James Dixson <dixson3@gmail.com> (https://github.com/dixson3)",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "bash",
+    "output-capping",
+    "context-window"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dixson3/pi-bash-cap.git"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

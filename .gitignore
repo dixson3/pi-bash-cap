@@ -5,3 +5,13 @@
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# Skill runtime state + local config (yf-beads-init; Surface Convention §6)
+/.yf/
+!/.yf/
+!/.yf/*/
+/.yf/*/*
+!/.yf/*/config.json
+
+# Skill runtime state + local config (yf-plan; Surface Convention §6)
+/.beads/formulas/
